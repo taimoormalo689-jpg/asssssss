@@ -19,7 +19,7 @@ import urllib.parse
 TELEGRAM_TOKEN = "8897883871:AAEk_8BpyqTJ9LKEuZAqKs-wtoyll71q89I"
 TELEGRAM_CHAT_ID = "8562052005"
 
-PORT = 8080
+PORT = int(os.environ.get("PORT", 8080))
 ADMIN_PORT = 8081
 # Auto-enable programmatic ngrok if pyngrok was imported successfully
 USE_NGROK = True if (ngrok is not None and conf is not None) else False
