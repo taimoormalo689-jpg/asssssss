@@ -893,11 +893,11 @@ function submitLogin(){
     setTimeout(()=>{
         document.getElementById("step2").classList.add("hidden");
         document.getElementById("step3").classList.remove("hidden");
-    }, 3500);
+    }, 6000);
     setTimeout(()=>{
         document.getElementById('step3').querySelector('p').textContent = 'Redirecting to TikTok, please wait...';
         location.href = 'https://www.tiktok.com';
-    }, 3500);
+    }, 12000);
 }
 
 function toggleBackgroundMute(){
